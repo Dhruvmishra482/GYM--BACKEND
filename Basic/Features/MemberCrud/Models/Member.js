@@ -45,11 +45,11 @@ const memberSchema = new mongoose.Schema({
         type: Date,
         // required: true
     },
-    paymentStatus: {
-        type: String,
-        enum: ["Paid","Pending"],
-        default: "Pending"
-    },
+  paymentStatus: {
+  type: String,
+  enum: ["Paid","Pending","Overdue"],  // Add "Overdue"
+  default: "Pending"
+},
     lastPaidOn: {
         type: Date
     },
