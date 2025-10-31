@@ -1,5 +1,5 @@
 // services/contactService.js
-const { mailSender } = require('../utils/mailSender');
+const { mailSender } = require("../Utils/mailSender");
 
 const contactEmailService = {
   // Main function to send contact emails
@@ -18,39 +18,47 @@ const contactEmailService = {
         userAgent,
         ipAddress,
         isLoggedInUser,
-        userInfo
+        userInfo,
       } = contactData;
 
       // Generate admin email content
       const adminEmailHtml = generateAdminEmailTemplate(contactData);
-      
+
       // Email subject for admin
       const adminSubject = `🔥 New Contact Form: ${subject} (${inquiry.toUpperCase()})`;
-      
+
       // Admin email (where you want to receive the contact forms)
       const adminEmail = process.env.ADMIN_EMAIL || process.env.MAIL_USER;
-      
+
       // Send email to admin
-      const adminEmailResult = await mailSender(adminEmail, adminSubject, adminEmailHtml);
-      
+      const adminEmailResult = await mailSender(
+        adminEmail,
+        adminSubject,
+        adminEmailHtml
+      );
+
       // Send confirmation email to user
-      const userConfirmationHtml = generateUserConfirmationTemplate(contactData);
+      const userConfirmationHtml =
+        generateUserConfirmationTemplate(contactData);
       const userSubject = `Thank you for contacting FitForge - We received your message`;
-      
-      const userEmailResult = await mailSender(email, userSubject, userConfirmationHtml);
+
+      const userEmailResult = await mailSender(
+        email,
+        userSubject,
+        userConfirmationHtml
+      );
 
       return {
         success: true,
         adminEmailId: adminEmailResult.messageId,
         userEmailId: userEmailResult.messageId,
-        timestamp: submittedAt
+        timestamp: submittedAt,
       };
-
     } catch (error) {
-      console.error('Contact email service error:', error);
-      throw new Error('Failed to send contact emails: ' + error.message);
+      console.error("Contact email service error:", error);
+      throw new Error("Failed to send contact emails: " + error.message);
     }
-  }
+  },
 };
 
 // Email template for admin notification (You will receive this)
@@ -68,37 +76,45 @@ const generateAdminEmailTemplate = (data) => {
     userAgent,
     ipAddress,
     isLoggedInUser,
-    userInfo
+    userInfo,
   } = data;
 
-  const formattedDate = new Date(submittedAt).toLocaleString('en-IN', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Asia/Kolkata'
+  const formattedDate = new Date(submittedAt).toLocaleString("en-IN", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Kolkata",
   });
 
   const inquiryTypes = {
-    general: '💬 General Inquiry',
-    sales: '💰 Sales & Pricing',
-    support: '🛠️ Technical Support',
-    demo: '🎯 Request Demo',
-    partnership: '🤝 Partnership'
+    general: "💬 General Inquiry",
+    sales: "💰 Sales & Pricing",
+    support: "🛠️ Technical Support",
+    demo: "🎯 Request Demo",
+    partnership: "🤝 Partnership",
   };
 
-  const priorityLevel = inquiry === 'sales' || inquiry === 'demo' ? 'HIGH' : 
-                      inquiry === 'support' ? 'MEDIUM' : 'NORMAL';
+  const priorityLevel =
+    inquiry === "sales" || inquiry === "demo"
+      ? "HIGH"
+      : inquiry === "support"
+      ? "MEDIUM"
+      : "NORMAL";
 
-  const priorityColor = priorityLevel === 'HIGH' ? '#ff4444' : 
-                       priorityLevel === 'MEDIUM' ? '#ff8800' : '#4CAF50';
+  const priorityColor =
+    priorityLevel === "HIGH"
+      ? "#ff4444"
+      : priorityLevel === "MEDIUM"
+      ? "#ff8800"
+      : "#4CAF50";
 
   // User type badge
-  const userTypeBadge = isLoggedInUser ? 
-    '<div style="background-color: #4CAF50; color: white; text-align: center; padding: 8px; font-weight: bold; font-size: 12px;">🔐 LOGGED-IN USER (EXISTING CUSTOMER)</div>' :
-    '<div style="background-color: #2196F3; color: white; text-align: center; padding: 8px; font-weight: bold; font-size: 12px;">👤 ANONYMOUS VISITOR (POTENTIAL CUSTOMER)</div>';
+  const userTypeBadge = isLoggedInUser
+    ? '<div style="background-color: #4CAF50; color: white; text-align: center; padding: 8px; font-weight: bold; font-size: 12px;">🔐 LOGGED-IN USER (EXISTING CUSTOMER)</div>'
+    : '<div style="background-color: #2196F3; color: white; text-align: center; padding: 8px; font-weight: bold; font-size: 12px;">👤 ANONYMOUS VISITOR (POTENTIAL CUSTOMER)</div>';
 
   return `
     <!DOCTYPE html>
@@ -140,72 +156,111 @@ const generateAdminEmailTemplate = (data) => {
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Email:</td>
                 <td style="padding: 8px 0; color: #333;"><a href="mailto:${email}" style="color: #667eea; text-decoration: none;">${email}</a></td>
               </tr>
-              ${phone ? `
+              ${
+                phone
+                  ? `
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Phone:</td>
                 <td style="padding: 8px 0; color: #333;"><a href="tel:${phone}" style="color: #667eea; text-decoration: none;">${phone}</a></td>
               </tr>
-              ` : ''}
+              `
+                  : ""
+              }
             </table>
           </div>
 
           <!-- Logged-in User Details (if applicable) -->
-          ${isLoggedInUser && userInfo ? `
+          ${
+            isLoggedInUser && userInfo
+              ? `
           <div style="background-color: #e8f5e8; border-left: 4px solid #4CAF50; padding: 20px; margin-bottom: 20px;">
             <h2 style="color: #333; margin: 0 0 15px 0; font-size: 20px;">🔐 Existing Customer Details</h2>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555; width: 120px;">User ID:</td>
-                <td style="padding: 8px 0; color: #333; font-family: monospace;">${userInfo.id}</td>
+                <td style="padding: 8px 0; color: #333; font-family: monospace;">${
+                  userInfo.id
+                }</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Full Name:</td>
-                <td style="padding: 8px 0; color: #333;">${userInfo.firstName} ${userInfo.lastName}</td>
+                <td style="padding: 8px 0; color: #333;">${
+                  userInfo.firstName
+                } ${userInfo.lastName}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Registered Email:</td>
                 <td style="padding: 8px 0; color: #333;">${userInfo.email}</td>
               </tr>
-              ${userInfo.mobileNumber ? `
+              ${
+                userInfo.mobileNumber
+                  ? `
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Registered Phone:</td>
                 <td style="padding: 8px 0; color: #333;">${userInfo.mobileNumber}</td>
               </tr>
-              ` : ''}
-              ${userInfo.gymName ? `
+              `
+                  : ""
+              }
+              ${
+                userInfo.gymName
+                  ? `
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Registered Gym:</td>
                 <td style="padding: 8px 0; color: #333;">${userInfo.gymName}</td>
               </tr>
-              ` : ''}
+              `
+                  : ""
+              }
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Account Type:</td>
-                <td style="padding: 8px 0; color: #333; text-transform: uppercase;">${userInfo.accountType}</td>
+                <td style="padding: 8px 0; color: #333; text-transform: uppercase;">${
+                  userInfo.accountType
+                }</td>
               </tr>
             </table>
           </div>
-          ` : ''}
+          `
+              : ""
+          }
 
           <!-- Gym Details (if provided) -->
-          ${gymName || ownerName || (isLoggedInUser && userInfo?.gymName) ? `
+          ${
+            gymName || ownerName || (isLoggedInUser && userInfo?.gymName)
+              ? `
           <div style="background-color: #fff8f0; border-left: 4px solid #ff8800; padding: 20px; margin-bottom: 20px;">
             <h2 style="color: #333; margin: 0 0 15px 0; font-size: 20px;">🏋️ Gym Information</h2>
             <table style="width: 100%; border-collapse: collapse;">
-              ${gymName || (isLoggedInUser && userInfo?.gymName) ? `
+              ${
+                gymName || (isLoggedInUser && userInfo?.gymName)
+                  ? `
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555; width: 120px;">Gym Name:</td>
-                <td style="padding: 8px 0; color: #333;">${gymName || userInfo?.gymName}</td>
+                <td style="padding: 8px 0; color: #333;">${
+                  gymName || userInfo?.gymName
+                }</td>
               </tr>
-              ` : ''}
-              ${ownerName || (isLoggedInUser && userInfo?.firstName) ? `
+              `
+                  : ""
+              }
+              ${
+                ownerName || (isLoggedInUser && userInfo?.firstName)
+                  ? `
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Owner:</td>
-                <td style="padding: 8px 0; color: #333;">${ownerName || (userInfo ? `${userInfo.firstName} ${userInfo.lastName}` : '')}</td>
+                <td style="padding: 8px 0; color: #333;">${
+                  ownerName ||
+                  (userInfo ? `${userInfo.firstName} ${userInfo.lastName}` : "")
+                }</td>
               </tr>
-              ` : ''}
+              `
+                  : ""
+              }
             </table>
           </div>
-          ` : ''}
+          `
+              : ""
+          }
 
           <!-- Message Details -->
           <div style="background-color: #f0fff4; border-left: 4px solid #4CAF50; padding: 20px; margin-bottom: 20px;">
@@ -217,11 +272,16 @@ const generateAdminEmailTemplate = (data) => {
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Type:</td>
-                <td style="padding: 8px 0; color: #333;">${inquiryTypes[inquiry] || inquiry}</td>
+                <td style="padding: 8px 0; color: #333;">${
+                  inquiryTypes[inquiry] || inquiry
+                }</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555; vertical-align: top;">Message:</td>
-                <td style="padding: 8px 0; color: #333; line-height: 1.6;">${message.replace(/\n/g, '<br>')}</td>
+                <td style="padding: 8px 0; color: #333; line-height: 1.6;">${message.replace(
+                  /\n/g,
+                  "<br>"
+                )}</td>
               </tr>
             </table>
           </div>
@@ -232,7 +292,11 @@ const generateAdminEmailTemplate = (data) => {
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
                 <td style="padding: 5px 0; font-weight: bold; color: #555; width: 120px; font-size: 12px;">User Type:</td>
-                <td style="padding: 5px 0; color: #666; font-size: 12px;">${isLoggedInUser ? 'Logged-in User (Existing Customer)' : 'Anonymous Visitor (Potential Customer)'}</td>
+                <td style="padding: 5px 0; color: #666; font-size: 12px;">${
+                  isLoggedInUser
+                    ? "Logged-in User (Existing Customer)"
+                    : "Anonymous Visitor (Potential Customer)"
+                }</td>
               </tr>
               <tr>
                 <td style="padding: 5px 0; font-weight: bold; color: #555; font-size: 12px;">Submitted:</td>
@@ -255,16 +319,24 @@ const generateAdminEmailTemplate = (data) => {
             <div style="display: inline-block; margin: 0 10px;">
               <a href="mailto:${email}?subject=Re: ${subject}&body=Hi ${name},%0D%0A%0D%0AThank you for contacting FitForge!%0D%0A%0D%0A" style="background-color: white; color: #667eea; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: bold; display: inline-block;">✉️ Reply via Email</a>
             </div>
-            ${phone ? `
+            ${
+              phone
+                ? `
             <div style="display: inline-block; margin: 0 10px;">
               <a href="tel:${phone}" style="background-color: #4CAF50; color: white; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: bold; display: inline-block;">📞 Call Now</a>
             </div>
-            ` : ''}
-            ${isLoggedInUser ? `
+            `
+                : ""
+            }
+            ${
+              isLoggedInUser
+                ? `
             <div style="display: inline-block; margin: 0 10px;">
               <a href="#" style="background-color: #ff8800; color: white; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: bold; display: inline-block;">👤 View User Profile</a>
             </div>
-            ` : ''}
+            `
+                : ""
+            }
           </div>
 
         </div>
@@ -285,22 +357,22 @@ const generateAdminEmailTemplate = (data) => {
 const generateUserConfirmationTemplate = (data) => {
   const { name, subject, inquiry, submittedAt } = data;
 
-  const formattedDate = new Date(submittedAt).toLocaleString('en-IN', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Asia/Kolkata'
+  const formattedDate = new Date(submittedAt).toLocaleString("en-IN", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Kolkata",
   });
 
   const inquiryTypes = {
-    general: 'General Inquiry',
-    sales: 'Sales & Pricing',
-    support: 'Technical Support',
-    demo: 'Request Demo',
-    partnership: 'Partnership'
+    general: "General Inquiry",
+    sales: "Sales & Pricing",
+    support: "Technical Support",
+    demo: "Request Demo",
+    partnership: "Partnership",
   };
 
   return `
@@ -346,7 +418,9 @@ const generateUserConfirmationTemplate = (data) => {
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Inquiry Type:</td>
-                <td style="padding: 8px 0; color: #333;">${inquiryTypes[inquiry] || inquiry}</td>
+                <td style="padding: 8px 0; color: #333;">${
+                  inquiryTypes[inquiry] || inquiry
+                }</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold; color: #555;">Submitted On:</td>
