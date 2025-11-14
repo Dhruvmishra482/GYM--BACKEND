@@ -12,6 +12,9 @@ const ownerRoutes = require("./Basic/Features/MyProfile/Routes/ownerProfileRoute
 const contactRoutes = require("./Basic/Features/MemberCrud/Routes/dashboardRoutes");
 const paymentRoutes = require("./Basic/Features/Payment/Routes/paymentRoutes");
 const subscriptionRoutes = require("./Basic/Features/Subscription/Routes/subscriptionRoutes");
+const dietPlanRoutes=require("./Advance/Features/AiDietPlan/Routes/dietPlanRoutes")
+const workoutPlanRoutes=require("./Advance/Features/Aiworkout/routes/workoutRoutes")
+// const announcementRoutes = require("./Advance/Features/BulkAnnouncement/Routes/announcementRoutes");
 // const analyticsRoutes = require("./routes/analyticsRoutes");
 
 // Initialize reminder scheduler
