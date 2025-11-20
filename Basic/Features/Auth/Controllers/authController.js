@@ -1,13 +1,12 @@
-
-const Owner=require("../../MemberCrud/Models/Owner")
+const Owner = require("../../MemberCrud/Models/Owner");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-require("dotenv").config()
-const OTP=require("../Models/Otp")
-const {mailSender}=require("../../../../Utils/mailSender")
-const {otpEmailTemplate}=require("../../../../Templates/otpEmailTemplate")
-const resetPasswordTemplate=require("../../../../Templates/resetPasswordTemplate")
-const passwordResetSuccessTemplate=require("../../../../Templates/passwordResetSuccessTemplate")
+require("dotenv").config();
+const OTP = require("../Models/Otp");
+const { mailSender } = require("../../../../Utils/mailSender");
+const { otpEmailTemplate } = require("../../../../Templates/otpEmailTemplate");
+const resetPasswordTemplate = require("../../../../Templates/resetPasswordTemplate");
+const passwordResetSuccessTemplate = require("../../../../Templates/passwordResetSuccessTemplate");
 // const rateLimit = require('express-rate-limit');
 // exports.signUp = async (req, res) => {
 //   try {
@@ -60,6 +59,8 @@ exports.signUp = async (req, res) => {
       confirmPassword,
     } = req.body;
 
+    console.log("📝 Signup request for:", email);
+
     if (
       !firstName ||
       !lastName ||
@@ -87,16 +88,37 @@ exports.signUp = async (req, res) => {
     }
 
     const otp = generateNumericOTP();
+    console.log("🔢 OTP generated:", otp);
 
     // Delete any existing OTPs for this email
     await OTP.deleteMany({ email });
     await OTP.create({ email, otp });
+    console.log("💾 OTP saved to database");
 
-    await mailSender(
-      email, 
-      "Your OTP for Signup - Gym Management", 
-      otpEmailTemplate(otp, firstName)
-    );
+    // Try to send email with detailed error handling
+    try {
+      await mailSender(
+        email,
+        "Your OTP for Signup - Gym Management",
+        otpEmailTemplate(otp, firstName)
+      );
+      console.log("✅ Email sent successfully");
+    } catch (emailError) {
+      console.error("❌ Email sending failed:", emailError);
+
+      // Clean up the OTP since email failed
+      await OTP.deleteMany({ email });
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to send OTP email. Please check your email configuration.",
+        error:
+          process.env.NODE_ENV === "development"
+            ? emailError.message
+            : undefined,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -110,23 +132,19 @@ exports.signUp = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Signup error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Failed to send OTP" });
+    console.error("❌ Signup error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send OTP",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
 };
 
 exports.verifyOTP = async (req, res) => {
   try {
-    const {
-      otp,
-      firstName,
-      lastName,
-      mobileNumber,
-      email,
-      password,
-    } = req.body;
+    const { otp, firstName, lastName, mobileNumber, email, password } =
+      req.body;
 
     if (!otp || !email) {
       return res
@@ -137,7 +155,9 @@ exports.verifyOTP = async (req, res) => {
     const response = await OTP.findOne({ email, otp });
 
     if (!response) {
-      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired OTP" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -155,10 +175,10 @@ exports.verifyOTP = async (req, res) => {
 
     // Generate JWT token and set cookie
     const token = jwt.sign(
-      { 
-        id: user._id, 
-        email: user.email, 
-        role: user.accountType 
+      {
+        id: user._id,
+        email: user.email,
+        role: user.accountType,
       },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
@@ -168,7 +188,7 @@ exports.verifyOTP = async (req, res) => {
       expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict"
+      sameSite: "strict",
     });
 
     return res.status(201).json({
@@ -198,7 +218,7 @@ exports.resendOTP = async (req, res) => {
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: "Email is required"
+        message: "Email is required",
       });
     }
 
@@ -207,7 +227,7 @@ exports.resendOTP = async (req, res) => {
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: "User already exists"
+        message: "User already exists",
       });
     }
 
@@ -225,14 +245,13 @@ exports.resendOTP = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "New OTP sent to your email"
+      message: "New OTP sent to your email",
     });
-
   } catch (error) {
     console.error("Resend OTP error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to resend OTP"
+      message: "Failed to resend OTP",
     });
   }
 };
@@ -240,20 +259,20 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
     console.log("REQ BODY: ", req.body);
-    
+
     const user = await Owner.findOne({ email });
     if (!user) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "User not registered" 
+      return res.status(400).json({
+        success: false,
+        message: "User not registered",
       });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Incorrect password" 
+      return res.status(401).json({
+        success: false,
+        message: "Incorrect password",
       });
     }
 
@@ -267,15 +286,15 @@ exports.login = async (req, res) => {
     user.password = undefined;
 
     // Cookie settings - adjust based on environment
-    const isProduction = process.env.NODE_ENV === 'production';
-    
+    const isProduction = process.env.NODE_ENV === "production";
+
     res
       .cookie("token", token, {
         expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days to match frontend
         httpOnly: true,
         secure: isProduction, // true in production, false in development
         sameSite: isProduction ? "none" : "lax", // "none" for production with HTTPS, "lax" for development
-        path: '/', // Ensure cookie is available for all routes
+        path: "/", // Ensure cookie is available for all routes
       })
       .status(200)
       .json({
@@ -285,9 +304,9 @@ exports.login = async (req, res) => {
       });
   } catch (error) {
     console.error("Login error:", error);
-    return res.status(500).json({ 
-      success: false, 
-      message: "Unable to login, please try again" 
+    return res.status(500).json({
+      success: false,
+      message: "Unable to login, please try again",
     });
   }
 };
@@ -301,45 +320,72 @@ exports.logout = (req, res) => {
     });
 };
 
-
-
 exports.forgotPassword = async (req, res) => {
   try {
-    console.log("Forgot Password request received"); // ✅ request reach ho rahi hai ya nahi
+    console.log("📧 Forgot Password request received");
 
     const { email } = req.body;
-    console.log("Email received:", email); // ✅ email correctly aa rahi hai ya nahi
+    console.log("📧 Email received:", email);
 
     if (!email) {
-      console.log("Email missing");
-      return res.status(400).json({ success: false, message: "Email is required" });
+      console.log("❌ Email missing");
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
     }
 
     const owner = await Owner.findOne({ email });
-    console.log("Owner found:", owner); // ✅ DB me owner exist karta hai ya nahi
+    console.log("👤 Owner found:", owner ? "✅ Yes" : "❌ No");
 
     if (!owner) {
-      console.log("Owner not found");
-      return res.status(404).json({ success: false, message: "Owner does not exist" });
+      console.log("❌ Owner not found");
+      return res.status(404).json({
+        success: false,
+        message: "Owner does not exist",
+      });
     }
 
-    const token = jwt.sign({ email: owner.email }, process.env.JWT_SECRET, { expiresIn: "15m" });
-    console.log("Token generated:", token); // ✅ JWT generate ho raha hai ya nahi
+    const token = jwt.sign({ email: owner.email }, process.env.JWT_SECRET, {
+      expiresIn: "15m",
+    });
+    console.log("🔐 Token generated successfully");
 
     const resetLink = `${process.env.FRONT_END_URL}/reset-password/${token}`;
-    console.log("Reset link:", resetLink);
+    console.log("🔗 Reset link:", resetLink);
 
-    await mailSender(
-      owner.email,
-      "Reset Your Password - Gym Management",
-      resetPasswordTemplate(resetLink, owner.firstName || "Owner")
-    );
-    console.log("Mail sent successfully");
+    // Try to send email with detailed error handling
+    try {
+      await mailSender(
+        owner.email,
+        "Reset Your Password - Gym Management",
+        resetPasswordTemplate(resetLink, owner.firstName || "Owner")
+      );
+      console.log("✅ Reset email sent successfully");
 
-    return res.status(200).json({ success: true, message: "Reset link sent to your email" });
+      return res.status(200).json({
+        success: true,
+        message: "Reset link sent to your email",
+      });
+    } catch (emailError) {
+      console.error("❌ Email sending failed:", emailError);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send reset email. Please try again later.",
+        error:
+          process.env.NODE_ENV === "development"
+            ? emailError.message
+            : undefined,
+      });
+    }
   } catch (error) {
-    console.error("Forgot Password Error:", error); // ✅ exact error kya aa raha hai
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    console.error("❌ Forgot Password Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
 };
 
@@ -397,7 +443,7 @@ exports.resetPassword = async (req, res) => {
       message: "Password has been reset successfully",
     });
   } catch (error) {
-    console.error('Reset Password Error:', error);
+    console.error("Reset Password Error:", error);
     return res.status(500).json({
       success: false,
       message: "Something went wrong. Please try again.",
