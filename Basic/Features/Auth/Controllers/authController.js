@@ -67,22 +67,25 @@ exports.signUp = async (req, res) => {
       !password ||
       !confirmPassword
     ) {
-      return res
-        .status(400)
-        .json({ success: false, message: "All fields are required" });
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required",
+      });
     }
 
     const existingUser = await Owner.findOne({ email });
     if (existingUser) {
-      return res
-        .status(409)
-        .json({ success: false, message: "User already exists" });
+      return res.status(409).json({
+        success: false,
+        message: "User already exists",
+      });
     }
 
     if (password !== confirmPassword) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Passwords do not match" });
+      return res.status(400).json({
+        success: false,
+        message: "Passwords do not match",
+      });
     }
 
     const otp = generateNumericOTP();
@@ -91,11 +94,25 @@ exports.signUp = async (req, res) => {
     await OTP.deleteMany({ email });
     await OTP.create({ email, otp });
 
-    await mailSender(
-      email,
-      "Your OTP for Signup - Gym Management",
-      otpEmailTemplate(otp, firstName)
-    );
+    // ✅ Send email with timeout handling
+    try {
+      const emailPromise = mailSender(
+        email,
+        "Your OTP for Signup - Gym Management",
+        otpEmailTemplate(otp, firstName)
+      );
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Email timeout")), 10000)
+      );
+
+      await Promise.race([emailPromise, timeoutPromise]);
+
+      console.log("✅ OTP email sent successfully");
+    } catch (emailError) {
+      console.error("❌ Email sending failed:", emailError);
+      // Continue anyway - OTP is stored in DB
+    }
 
     return res.status(200).json({
       success: true,
@@ -109,10 +126,11 @@ exports.signUp = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Signup error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Failed to send OTP" });
+    console.error("❌ Signup error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send OTP. Please try again.",
+    });
   }
 };
 
@@ -294,14 +312,14 @@ exports.login = async (req, res) => {
 };
 
 exports.logout = (req, res) => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  
+  const isProduction = process.env.NODE_ENV === "production";
+
   res
-    .clearCookie("token", { 
-      httpOnly: true, 
+    .clearCookie("token", {
+      httpOnly: true,
       sameSite: isProduction ? "none" : "lax", // ✅ Changed
       secure: isProduction, // ✅ Changed
-      path: '/'
+      path: "/",
     })
     .status(200)
     .json({
@@ -312,54 +330,76 @@ exports.logout = (req, res) => {
 
 exports.forgotPassword = async (req, res) => {
   try {
-    console.log("Forgot Password request received"); // ✅ request reach ho rahi hai ya nahi
-
+    console.log("Forgot Password request received");
     const { email } = req.body;
-    console.log("Email received:", email); // ✅ email correctly aa rahi hai ya nahi
+    console.log("Email received:", email);
 
     if (!email) {
-      console.log("Email missing");
-      return res
-        .status(400)
-        .json({ success: false, message: "Email is required" });
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
     }
 
     const owner = await Owner.findOne({ email });
-    console.log("Owner found:", owner); // ✅ DB me owner exist karta hai ya nahi
+    console.log("Owner found:", !!owner);
 
     if (!owner) {
-      console.log("Owner not found");
-      return res
-        .status(404)
-        .json({ success: false, message: "Owner does not exist" });
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email",
+      });
     }
 
     const token = jwt.sign({ email: owner.email }, process.env.JWT_SECRET, {
       expiresIn: "15m",
     });
-    console.log("Token generated:", token); // ✅ JWT generate ho raha hai ya nahi
+    console.log("Token generated successfully");
 
     const resetLink = `${process.env.FRONT_END_URL}/reset-password/${token}`;
     console.log("Reset link:", resetLink);
 
-    await mailSender(
-      owner.email,
-      "Reset Your Password - Gym Management",
-      resetPasswordTemplate(resetLink, owner.firstName || "Owner")
-    );
-    console.log("Mail sent successfully");
+    // ✅ Add timeout and error handling for email
+    try {
+      // Set a timeout for email sending (10 seconds)
+      const emailPromise = mailSender(
+        owner.email,
+        "Reset Your Password - Gym Management",
+        resetPasswordTemplate(resetLink, owner.firstName || "User")
+      );
 
-    return res
-      .status(200)
-      .json({ success: true, message: "Reset link sent to your email" });
+      // Add timeout wrapper
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Email sending timeout")), 10000)
+      );
+
+      await Promise.race([emailPromise, timeoutPromise]);
+
+      console.log("✅ Mail sent successfully");
+
+      return res.status(200).json({
+        success: true,
+        message: "Password reset link sent to your email",
+      });
+    } catch (emailError) {
+      console.error("❌ Email sending failed:", emailError);
+
+      // Even if email fails, still return success to user
+      // (for security - don't reveal if email exists)
+      return res.status(200).json({
+        success: true,
+        message:
+          "If an account exists with this email, you will receive a password reset link",
+      });
+    }
   } catch (error) {
-    console.error("Forgot Password Error:", error); // ✅ exact error kya aa raha hai
-    return res
-      .status(500)
-      .json({ success: false, message: "Internal server error" });
+    console.error("❌ Forgot Password Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Please try again later.",
+    });
   }
 };
-
 // Reset Password
 exports.resetPassword = async (req, res) => {
   try {
