@@ -1,5 +1,7 @@
 const Owner = require("../../MemberCrud/Models/Owner");
 const Member = require("../../MemberCrud/Models/Member");
+const REMINDER_TEMPLATE_SID = "HXd89670d1e1a52f161cd36c8fed252e95";
+
 const {
   sendWhatsapp,
   testTwilioSetup,
@@ -779,8 +781,15 @@ exports.sendMemberReminder = async (req, res) => {
     console.log(`Preparing to send WhatsApp to ${member.phoneNo}`);
 
     try {
-      // Send WhatsApp message to member
-      const result = await sendWhatsapp(member.phoneNo, message);
+  const result = await sendWhatsapp(
+    member.phoneNo,
+    REMINDER_TEMPLATE_SID,   // ✅ TEMPLATE SID
+    {
+      "1": member.name,                 // {{1}}
+      "2": `₹${member.feesAmount}`       // {{2}}
+    }
+  );
+
 
       console.log(`WhatsApp sent successfully:`, result);
 
