@@ -260,6 +260,41 @@ exports.getAnnouncementStats = async (req, res) => {
   }
 };
 
+// Update announcement
+exports.updateAnnouncement = async (req, res) => {
+  try {
+    const { announcementId } = req.params;
+    const ownerId = req.user.id;
+    const updateData = req.body;
+
+    const announcement = await Announcement.findOneAndUpdate(
+      { _id: announcementId, ownerId },
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!announcement) {
+      return res.status(404).json({
+        success: false,
+        message: "Announcement not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Announcement updated successfully",
+      data: announcement,
+    });
+  } catch (error) {
+    console.error("Error updating announcement:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update announcement",
+      error: error.message,
+    });
+  }
+};
+
 // Delete announcement
 exports.deleteAnnouncement = async (req, res) => {
   try {

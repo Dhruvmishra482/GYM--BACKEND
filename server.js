@@ -14,7 +14,7 @@ const paymentRoutes = require("./Basic/Features/Payment/Routes/paymentRoutes");
 const subscriptionRoutes = require("./Basic/Features/Subscription/Routes/subscriptionRoutes");
 const dietPlanRoutes=require("./Advance/Features/AiDietPlan/Routes/dietPlanRoutes")
 const workoutPlanRoutes=require("./Advance/Features/Aiworkout/routes/workoutRoutes")
-// const announcementRoutes = require("./Advance/Features/BulkAnnouncement/Routes/announcementRoutes");
+const announcementRoutes = require("./Advance/Features/bulkannouncement/routes/announcementRoutes");
 // const analyticsRoutes = require("./routes/analyticsRoutes");
 
 
@@ -74,7 +74,7 @@ app.use("/api/v1", contactRoutes);
 app.use("/api/v1/analytics", require("./Basic/Features/MemberCrud/Routes/analyticsRoutes"));
 app.use("/api/v1/diet-plan", dietPlanRoutes);
 app.use("/api/v1/workout-plan", workoutPlanRoutes);
-// app.use("/api/v1/announcement", announcementRoutes);
+app.use("/api/v1/announcement", announcementRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

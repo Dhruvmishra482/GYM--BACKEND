@@ -14,6 +14,7 @@ exports.auth = async (req, res, next) => {
     console.log("Token from cookie:", req.cookies?.token);
     console.log("Token from body:", req.body?.token);
     console.log("Token from header:", req.header("Authorization"));
+    console.log("Extracted token:", token);
 
     if (!token) {
       return res.status(401).json({
@@ -22,13 +23,24 @@ exports.auth = async (req, res, next) => {
        });
     }
 
+    console.log("JWT_SECRET:", process.env.JWT_SECRET);
+    if (!process.env.JWT_SECRET) {
+        console.error("JWT_SECRET is not defined in .env");
+        return res.status(500).json({
+            success: false,
+            message: "Server configuration error: JWT_SECRET missing."
+        });
+    }
+
     try {
       // Verify the JWT token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      console.log("Decoded token:", decoded);
              
       // Optional: Fetch fresh user data from database to ensure user still exists
       // and hasn't been deactivated (recommended for better security)
       const user = await Owner.findById(decoded.id).select('-password');
+      console.log("User found:", user ? user.email : "none");
       if (!user) {
         return res.status(401).json({
           success: false,
