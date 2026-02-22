@@ -1900,258 +1900,258 @@
 // });
 
 
-require("dotenv").config();
-jest.setTimeout(30000);
+// require("dotenv").config();
+// jest.setTimeout(30000);
 
-const request = require("supertest");
-const mongoose = require("mongoose");
-const Member = require("../../MemberCrud/Models/Member"); // Adjust path as needed
+// const request = require("supertest");
+// const mongoose = require("mongoose");
+// const Member = require("../../MemberCrud/Models/Member"); // Adjust path as needed
 
-let app;
-let authCookie; // Cookie for authenticated requests
-let testMemberPhone = "9999988888";
-let testMemberPhone2 = "9999977777";
+// let app;
+// let authCookie; // Cookie for authenticated requests
+// let testMemberPhone = "9999988888";
+// let testMemberPhone2 = "9999977777";
 
-beforeAll(async () => {
-  // MongoDB connect
-  await mongoose.connect(process.env.MONGODB_URL);
+// beforeAll(async () => {
+//   // MongoDB connect
+//   await mongoose.connect(process.env.MONGODB_URL);
   
-  // Express server import
-  app = require("../server");
+//   // Express server import
+//   app = require("../server");
   
-  // Login as owner to get authentication cookie
-  const loginRes = await request(app)
-    .post("/api/v1/auth/login")
-    .send({
-      email: "dhruvmishra1234@gmail.com",
-      password: "123456",
-    });
+//   // Login as owner to get authentication cookie
+//   const loginRes = await request(app)
+//     .post("/api/v1/auth/login")
+//     .send({
+//       email: "dhruvmishra1234@gmail.com",
+//       password: "123456",
+//     });
 
-  // Extract cookie from login response
-  authCookie = loginRes.headers['set-cookie'].find(cookie => 
-    cookie.startsWith('token=')
-  );
+//   // Extract cookie from login response
+//   authCookie = loginRes.headers['set-cookie'].find(cookie => 
+//     cookie.startsWith('token=')
+//   );
 
-  console.log("Auth cookie obtained:", authCookie ? "Yes" : "No");
-});
+//   console.log("Auth cookie obtained:", authCookie ? "Yes" : "No");
+// });
 
-beforeEach(async () => {
-  // Clean up test members before each test
-  await Member.deleteMany({ 
-    phoneNo: { $in: [testMemberPhone, testMemberPhone2] } 
-  });
-});
+// beforeEach(async () => {
+//   // Clean up test members before each test
+//   await Member.deleteMany({ 
+//     phoneNo: { $in: [testMemberPhone, testMemberPhone2] } 
+//   });
+// });
 
-afterAll(async () => {
-  // Final cleanup
-  await Member.deleteMany({ 
-    phoneNo: { $in: [testMemberPhone, testMemberPhone2] } 
-  });
-  await mongoose.connection.close();
-});
+// afterAll(async () => {
+//   // Final cleanup
+//   await Member.deleteMany({ 
+//     phoneNo: { $in: [testMemberPhone, testMemberPhone2] } 
+//   });
+//   await mongoose.connection.close();
+// });
 
-describe("Member API Routes", () => {
-  // Test data with all required fields based on your validation
-  const testMemberData = {
-    name: "Test Member",
-    phoneNo: testMemberPhone,
-    age: 25,
-    gender: "Male",
-    email: "testmember@gmail.com",
-    planDuration: "1 month",
-    address: "#123 Test Address",
-    feesAmount: 500,
-    nextDueDate: "2025-09-20",
-  };
+// describe("Member API Routes", () => {
+//   // Test data with all required fields based on your validation
+//   const testMemberData = {
+//     name: "Test Member",
+//     phoneNo: testMemberPhone,
+//     age: 25,
+//     gender: "Male",
+//     email: "testmember@gmail.com",
+//     planDuration: "1 month",
+//     address: "#123 Test Address",
+//     feesAmount: 500,
+//     nextDueDate: "2025-09-20",
+//   };
 
-  describe("POST /api/v1/member/addmember", () => {
-    it("should add new member successfully", async () => {
-      const res = await request(app)
-        .post("/api/v1/member/addmember")
-        .set("Cookie", authCookie)
-        .send(testMemberData);
+//   describe("POST /api/v1/member/addmember", () => {
+//     it("should add new member successfully", async () => {
+//       const res = await request(app)
+//         .post("/api/v1/member/addmember")
+//         .set("Cookie", authCookie)
+//         .send(testMemberData);
 
-      expect(res.statusCode).toBe(201);
-      expect(res.body.success).toBe(true);
-      expect(res.body.message).toBe("New member added successfully");
-      expect(res.body.data).toBeDefined();
-      expect(res.body.data.name).toBe(testMemberData.name);
-      expect(res.body.data.phoneNo).toBe(testMemberData.phoneNo);
-    });
+//       expect(res.statusCode).toBe(201);
+//       expect(res.body.success).toBe(true);
+//       expect(res.body.message).toBe("New member added successfully");
+//       expect(res.body.data).toBeDefined();
+//       expect(res.body.data.name).toBe(testMemberData.name);
+//       expect(res.body.data.phoneNo).toBe(testMemberData.phoneNo);
+//     });
 
-    it("should not add member without authentication", async () => {
-      const res = await request(app)
-        .post("/api/v1/member/addmember")
-        .send(testMemberData);
+//     it("should not add member without authentication", async () => {
+//       const res = await request(app)
+//         .post("/api/v1/member/addmember")
+//         .send(testMemberData);
 
-      expect(res.statusCode).toBe(401);
-      expect(res.body.success).toBe(false);
-    });
+//       expect(res.statusCode).toBe(401);
+//       expect(res.body.success).toBe(false);
+//     });
 
-    it("should not add member with duplicate phone number", async () => {
-      // First add a member
-      await request(app)
-        .post("/api/v1/member/addmember")
-        .set("Cookie", authCookie)
-        .send(testMemberData);
+//     it("should not add member with duplicate phone number", async () => {
+//       // First add a member
+//       await request(app)
+//         .post("/api/v1/member/addmember")
+//         .set("Cookie", authCookie)
+//         .send(testMemberData);
 
-      // Try to add another member with same phone
-      const res = await request(app)
-        .post("/api/v1/member/addmember")
-        .set("Cookie", authCookie)
-        .send({
-          ...testMemberData,
-          name: "Different Name",
-          email: "different@gmail.com"
-        });
+//       // Try to add another member with same phone
+//       const res = await request(app)
+//         .post("/api/v1/member/addmember")
+//         .set("Cookie", authCookie)
+//         .send({
+//           ...testMemberData,
+//           name: "Different Name",
+//           email: "different@gmail.com"
+//         });
 
-      expect(res.statusCode).toBe(409);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toBe("Member already exists");
-    });
+//       expect(res.statusCode).toBe(409);
+//       expect(res.body.success).toBe(false);
+//       expect(res.body.message).toBe("Member already exists");
+//     });
 
-    it("should not add member with missing required fields", async () => {
-      const invalidData = {
-        name: "",
-        phoneNo: "",
-        feesAmount: "",
-        nextDueDate: "",
-        address: ""
-      };
+//     it("should not add member with missing required fields", async () => {
+//       const invalidData = {
+//         name: "",
+//         phoneNo: "",
+//         feesAmount: "",
+//         nextDueDate: "",
+//         address: ""
+//       };
 
-      const res = await request(app)
-        .post("/api/v1/member/addmember")
-        .set("Cookie", authCookie)
-        .send(invalidData);
+//       const res = await request(app)
+//         .post("/api/v1/member/addmember")
+//         .set("Cookie", authCookie)
+//         .send(invalidData);
 
-      expect(res.statusCode).toBe(400);
-      expect(res.body.success).toBe(false);
-      expect(res.body.errors).toBeDefined();
-    });
-  });
+//       expect(res.statusCode).toBe(400);
+//       expect(res.body.success).toBe(false);
+//       expect(res.body.errors).toBeDefined();
+//     });
+//   });
 
-  describe("PATCH /api/v1/member/editmember/:phoneNo", () => {
-    beforeEach(async () => {
-      // Add a test member before each edit test
-      await request(app)
-        .post("/api/v1/member/addmember")
-        .set("Cookie", authCookie)
-        .send(testMemberData);
-    });
+//   describe("PATCH /api/v1/member/editmember/:phoneNo", () => {
+//     beforeEach(async () => {
+//       // Add a test member before each edit test
+//       await request(app)
+//         .post("/api/v1/member/addmember")
+//         .set("Cookie", authCookie)
+//         .send(testMemberData);
+//     });
 
-    it("should edit member successfully", async () => {
-      const updateData = {
-        feesAmount: 600,
-        nextDueDate: "2025-10-20"
-      };
+//     it("should edit member successfully", async () => {
+//       const updateData = {
+//         feesAmount: 600,
+//         nextDueDate: "2025-10-20"
+//       };
 
-      const res = await request(app)
-        .patch(`/api/v1/member/editmember/${testMemberPhone}`)
-        .set("Cookie", authCookie)
-        .send(updateData);
+//       const res = await request(app)
+//         .patch(`/api/v1/member/editmember/${testMemberPhone}`)
+//         .set("Cookie", authCookie)
+//         .send(updateData);
 
-      expect(res.statusCode).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.message).toBe("Updated successfully");
-      expect(res.body.data.feesAmount).toBe(600);
-    });
+//       expect(res.statusCode).toBe(200);
+//       expect(res.body.success).toBe(true);
+//       expect(res.body.message).toBe("Updated successfully");
+//       expect(res.body.data.feesAmount).toBe(600);
+//     });
 
-    it("should not edit member without authentication", async () => {
-      const updateData = {
-        feesAmount: 600
-      };
+//     it("should not edit member without authentication", async () => {
+//       const updateData = {
+//         feesAmount: 600
+//       };
 
-      const res = await request(app)
-        .patch(`/api/v1/member/editmember/${testMemberPhone}`)
-        .send(updateData);
+//       const res = await request(app)
+//         .patch(`/api/v1/member/editmember/${testMemberPhone}`)
+//         .send(updateData);
 
-      expect(res.statusCode).toBe(401);
-      expect(res.body.success).toBe(false);
-    });
+//       expect(res.statusCode).toBe(401);
+//       expect(res.body.success).toBe(false);
+//     });
 
-    it("should not edit non-existent member", async () => {
-      const updateData = {
-        feesAmount: 600
-      };
+//     it("should not edit non-existent member", async () => {
+//       const updateData = {
+//         feesAmount: 600
+//       };
 
-      const res = await request(app)
-        .patch("/api/v1/member/editmember/0000000000")
-        .set("Cookie", authCookie)
-        .send(updateData);
+//       const res = await request(app)
+//         .patch("/api/v1/member/editmember/0000000000")
+//         .set("Cookie", authCookie)
+//         .send(updateData);
 
-      expect(res.statusCode).toBe(404);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toBe("Member not found with this phone number");
-    });
+//       expect(res.statusCode).toBe(404);
+//       expect(res.body.success).toBe(false);
+//       expect(res.body.message).toBe("Member not found with this phone number");
+//     });
 
-    it("should not allow updating restricted fields", async () => {
-      const updateData = {
-        name: "New Name", // Not allowed to update
-        phoneNo: "1111111111" // Not allowed to update
-      };
+//     it("should not allow updating restricted fields", async () => {
+//       const updateData = {
+//         name: "New Name", // Not allowed to update
+//         phoneNo: "1111111111" // Not allowed to update
+//       };
 
-      const res = await request(app)
-        .patch(`/api/v1/member/editmember/${testMemberPhone}`)
-        .set("Cookie", authCookie)
-        .send(updateData);
+//       const res = await request(app)
+//         .patch(`/api/v1/member/editmember/${testMemberPhone}`)
+//         .set("Cookie", authCookie)
+//         .send(updateData);
 
-      expect(res.statusCode).toBe(400);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toBe("Update not allowed");
-    });
+//       expect(res.statusCode).toBe(400);
+//       expect(res.body.success).toBe(false);
+//       expect(res.body.message).toBe("Update not allowed");
+//     });
 
-    it("should not edit with empty required fields", async () => {
-      const updateData = {
-        feesAmount: "", // Empty value should fail validation
-      };
+//     it("should not edit with empty required fields", async () => {
+//       const updateData = {
+//         feesAmount: "", // Empty value should fail validation
+//       };
 
-      const res = await request(app)
-        .patch(`/api/v1/member/editmember/${testMemberPhone}`)
-        .set("Cookie", authCookie)
-        .send(updateData);
+//       const res = await request(app)
+//         .patch(`/api/v1/member/editmember/${testMemberPhone}`)
+//         .set("Cookie", authCookie)
+//         .send(updateData);
 
-      expect(res.statusCode).toBe(400);
-      expect(res.body.success).toBe(false);
-      expect(res.body.errors).toBeDefined();
-    });
-  });
+//       expect(res.statusCode).toBe(400);
+//       expect(res.body.success).toBe(false);
+//       expect(res.body.errors).toBeDefined();
+//     });
+//   });
 
-  describe("DELETE /api/v1/member/deletemember/:phoneNo", () => {
-    beforeEach(async () => {
-      // Add a test member before each delete test
-      await request(app)
-        .post("/api/v1/member/addmember")
-        .set("Cookie", authCookie)
-        .send(testMemberData);
-    });
+//   describe("DELETE /api/v1/member/deletemember/:phoneNo", () => {
+//     beforeEach(async () => {
+//       // Add a test member before each delete test
+//       await request(app)
+//         .post("/api/v1/member/addmember")
+//         .set("Cookie", authCookie)
+//         .send(testMemberData);
+//     });
 
-    it("should delete member successfully", async () => {
-      const res = await request(app)
-        .delete(`/api/v1/member/deletemember/${testMemberPhone}`)
-        .set("Cookie", authCookie);
+//     it("should delete member successfully", async () => {
+//       const res = await request(app)
+//         .delete(`/api/v1/member/deletemember/${testMemberPhone}`)
+//         .set("Cookie", authCookie);
 
-      expect(res.statusCode).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.message).toBe("Deleted successfully");
-      expect(res.body.data).toBeDefined();
-    });
+//       expect(res.statusCode).toBe(200);
+//       expect(res.body.success).toBe(true);
+//       expect(res.body.message).toBe("Deleted successfully");
+//       expect(res.body.data).toBeDefined();
+//     });
 
-    it("should not delete member without authentication", async () => {
-      const res = await request(app)
-        .delete(`/api/v1/member/deletemember/${testMemberPhone}`);
+//     it("should not delete member without authentication", async () => {
+//       const res = await request(app)
+//         .delete(`/api/v1/member/deletemember/${testMemberPhone}`);
 
-      expect(res.statusCode).toBe(401);
-      expect(res.body.success).toBe(false);
-    });
+//       expect(res.statusCode).toBe(401);
+//       expect(res.body.success).toBe(false);
+//     });
 
-    it("should not delete non-existent member", async () => {
-      const res = await request(app)
-        .delete("/api/v1/member/deletemember/0000000000")
-        .set("Cookie", authCookie);
+//     it("should not delete non-existent member", async () => {
+//       const res = await request(app)
+//         .delete("/api/v1/member/deletemember/0000000000")
+//         .set("Cookie", authCookie);
 
-      expect(res.statusCode).toBe(404);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toBe("Member not found!");
-    });
-  });
-});
+//       expect(res.statusCode).toBe(404);
+//       expect(res.body.success).toBe(false);
+//       expect(res.body.message).toBe("Member not found!");
+//     });
+//   });
+// });

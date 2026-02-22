@@ -84,10 +84,28 @@ exports.getAllWorkoutPlans = async (req, res) => {
         
         const skip = (page - 1) * limit;
         
-        const workoutPlans = await WorkoutPlan.find(query)
+        let workoutPlans = await WorkoutPlan.find(query)
             .sort({ createdAt: -1 })
             .skip(skip)
-            .limit(parseInt(limit));
+            .limit(parseInt(limit))
+            .lean(); // Use .lean() for plain JavaScript objects, then manually transform
+
+        // Transform weeklySchedule to ensure consistency for frontend
+        workoutPlans = workoutPlans.map(plan => {
+            if (plan.weeklySchedule && typeof plan.weeklySchedule === 'object') {
+                const transformedSchedule = {};
+                for (const day in plan.weeklySchedule) {
+                    // Check if a day's schedule is a string and convert it to an object
+                    if (typeof plan.weeklySchedule[day] === 'string') {
+                        transformedSchedule[day] = { focus: plan.weeklySchedule[day] };
+                    } else {
+                        transformedSchedule[day] = plan.weeklySchedule[day];
+                    }
+                }
+                return { ...plan, weeklySchedule: transformedSchedule };
+            }
+            return plan;
+        });
         
         const total = await WorkoutPlan.countDocuments(query);
         
@@ -164,8 +182,36 @@ exports.updateWorkoutPlan = async (req, res) => {
             });
         }
         
-        // Update version
-        updateData.version = workoutPlan.version + 1;
+        // Transform weeklySchedule to match schema
+        if (updateData.weeklySchedule && typeof updateData.weeklySchedule === 'object') {
+            const transformedSchedule = {};
+            const dayMapping = {
+                'Mon': 'monday', 'Tue': 'tuesday', 'Wed': 'wednesday', 'Thu': 'thursday',
+                'Fri': 'friday', 'Sat': 'saturday', 'Sun': 'sunday'
+            };
+
+            for (const dayAbbr in updateData.weeklySchedule) {
+                const dayFull = dayMapping[dayAbbr];
+                if (dayFull) {
+                    const existingDaySchedule = workoutPlan.weeklySchedule[dayFull] || {};
+                    const incomingDayData = updateData.weeklySchedule[dayAbbr];
+
+                    // Ensure incomingDayData is an object before spreading
+                    const validIncomingDayData = typeof incomingDayData === 'object' && incomingDayData !== null
+                        ? incomingDayData
+                        : {};
+
+                    transformedSchedule[dayFull] = {
+                        ...existingDaySchedule,
+                        ...validIncomingDayData
+                    };
+                }
+            }
+            updateData.weeklySchedule = transformedSchedule;
+        }
+        
+        // Update version safely, default to 0 if not present
+        updateData.version = (workoutPlan.version || 0) + 1;
         
         const updatedPlan = await WorkoutPlan.findByIdAndUpdate(
             planId,
@@ -184,7 +230,8 @@ exports.updateWorkoutPlan = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: "Failed to update workout plan",
-            error: error.message
+            errorMessage: error.message, // Include specific error message for debugging
+            errorStack: error.stack // Include error stack for more detailed debugging
         });
     }
 };

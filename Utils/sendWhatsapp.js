@@ -49,65 +49,42 @@ try {
   console.error("❌ Failed to initialize Twilio client:", error.message);
 }
 
-const sendWhatsapp = async (toNumber, message) => {
+const sendWhatsapp = async (toNumber, templateSid, variables = {}) => {
   try {
-    // Re-validate config before each call
     validateTwilioConfig();
 
     if (!client) {
-      throw new Error("Twilio client not initialized. Check your credentials.");
+      throw new Error("Twilio client not initialized.");
     }
 
-    // Format phone number
     let formattedNumber = toNumber.toString().trim();
 
-    // Remove any existing whatsapp: prefix
-    if (formattedNumber.startsWith("whatsapp:")) {
-      formattedNumber = formattedNumber.replace("whatsapp:", "");
-    }
-
-    // Add country code if missing
     if (!formattedNumber.startsWith("+")) {
-      // For Indian numbers, add +91 prefix
       formattedNumber = "+91" + formattedNumber;
     }
 
-    // Additional validation
     if (!formattedNumber.match(/^\+\d{10,15}$/)) {
-      throw new Error(
-        `Invalid phone number format: ${formattedNumber}. Expected format: +[country code][number]`
-      );
+      throw new Error(`Invalid phone number format: ${formattedNumber}`);
     }
 
-    console.log(
-      `📱 Sending WhatsApp from: ${process.env.TWILIO_WHATSAPP_NUMBER}`
-    );
-    console.log(`📱 Sending WhatsApp to: ${formattedNumber}`);
-    console.log(
-      `💬 Message: ${message.substring(0, 100)}${
-        message.length > 100 ? "..." : ""
-      }`
-    );
+    console.log("📱 Sending WhatsApp from:", process.env.TWILIO_WHATSAPP_NUMBER);
+    console.log("📱 Sending WhatsApp to:", formattedNumber);
+    console.log("📄 Using Template SID:", templateSid);
+    console.log("📄 Variables:", variables);
 
-    // REMOVED: Authentication test that causes 20008 error on trial accounts
-    // Trial accounts can send messages but can't fetch account details
-
-    // Send the message directly
     const result = await client.messages.create({
       from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
       to: `whatsapp:${formattedNumber}`,
-      body: message,
+      contentSid: templateSid,               // ✅ dynamic
+      contentVariables: JSON.stringify(variables),
     });
 
-    console.log(`✅ WhatsApp sent successfully. SID: ${result.sid}`);
-    console.log(`📊 Status: ${result.status}, Direction: ${result.direction}`);
+    console.log("✅ WhatsApp sent:", result.sid, result.status);
 
     return {
       success: true,
       sid: result.sid,
       status: result.status,
-      to: formattedNumber,
-      from: process.env.TWILIO_WHATSAPP_NUMBER,
     };
   } catch (error) {
     console.error(`❌ WhatsApp sending failed:`, error);
