@@ -3,6 +3,11 @@ const Member =require("../../../../Basic/Features/MemberCrud/Models/Member")
 
 const Owner=require("../../../../Basic/Features/MemberCrud/Models/Owner")
 const {sendWhatsapp}=require("../../../../Utils/sendWhatsapp")
+const { mailSender } = require("../../../../Utils/mailSender");
+const { getGymName, getOwnerName } = require("../../../../Utils/gymContext");
+const {
+    getDietPlanEmail,
+} = require("../../../../Templates/memberCommunicationTemplates");
 
 // Create new diet plan
 exports.createDietPlan = async (req, res) => {
@@ -224,7 +229,7 @@ exports.broadcastDietPlan = async (req, res) => {
     try {
         const { planId } = req.params;
         const ownerId = req.user.id;
-        const { filterGender, filterStatus } = req.body; // Optional filters
+        const { filterGender, filterStatus, filterPaymentStatus } = req.body; // Optional filters
         
         // Find diet plan
         const dietPlan = await DietPlan.findOne({
@@ -250,8 +255,9 @@ exports.broadcastDietPlan = async (req, res) => {
             memberQuery.gender = filterGender;
         }
         
-        if (filterStatus && filterStatus !== 'All') {
-            memberQuery.paymentStatus = filterStatus;
+        const paymentFilter = filterPaymentStatus || filterStatus;
+        if (paymentFilter && paymentFilter !== 'All') {
+            memberQuery.paymentStatus = paymentFilter;
         }
         
         // Get all members
@@ -273,49 +279,112 @@ exports.broadcastDietPlan = async (req, res) => {
         // Send to all members
         let successCount = 0;
         let failedCount = 0;
+        let whatsappSuccess = 0;
+        let whatsappFailed = 0;
+        let whatsappSkipped = 0;
+        let emailSuccess = 0;
+        let emailFailed = 0;
+        let emailSkipped = 0;
         const deliveryResults = [];
+        const gymName = getGymName(owner);
+        const ownerName = getOwnerName(owner);
         
         for (const member of members) {
             try {
+                const channelErrors = [];
+                let whatsappStatus = 'skipped';
+                let emailStatus = 'skipped';
+                let whatsappSid = null;
+                let emailMessageId = null;
+
                 // Get personalized message
                 const message = dietPlan.getWhatsAppMessage(member.name);
-                
-                // Send WhatsApp message
-                const result = await sendWhatsapp(member.phoneNo, message);
-                
-                // Log successful delivery
-                await dietPlan.logDelivery(
-                    member,
-                    'sent',
-                    null,
-                    result.sid
-                );
-                
-                successCount++;
+
+                if (member.phoneNo) {
+                    try {
+                        const result = await sendWhatsapp(member.phoneNo, message);
+                        whatsappStatus = 'sent';
+                        whatsappSid = result.sid;
+                        whatsappSuccess++;
+                    } catch (whatsappError) {
+                        whatsappStatus = 'failed';
+                        whatsappFailed++;
+                        channelErrors.push(`WhatsApp: ${whatsappError.message}`);
+                    }
+                } else {
+                    whatsappSkipped++;
+                }
+
+                if (member.email) {
+                    try {
+                        const html = getDietPlanEmail({
+                            memberName: member.name || 'Member',
+                            gymName,
+                            ownerName,
+                            plan: dietPlan,
+                        });
+                        const info = await mailSender(
+                            member.email,
+                            `[${gymName}] ${dietPlan.planTitle} - Diet Plan`,
+                            html
+                        );
+                        emailStatus = 'sent';
+                        emailMessageId = info?.messageId || null;
+                        emailSuccess++;
+                    } catch (emailError) {
+                        emailStatus = 'failed';
+                        emailFailed++;
+                        channelErrors.push(`Email: ${emailError.message}`);
+                    }
+                } else {
+                    emailSkipped++;
+                }
+
+                const isDelivered = whatsappStatus === 'sent' || emailStatus === 'sent';
+                if (isDelivered) {
+                    await dietPlan.logDelivery(member, 'sent', null, whatsappSid);
+                    successCount++;
+                } else {
+                    await dietPlan.logDelivery(
+                        member,
+                        'failed',
+                        channelErrors.join(' | ') || 'No valid delivery channel'
+                    );
+                    failedCount++;
+                }
+
                 deliveryResults.push({
                     memberId: member._id,
                     name: member.name,
-                    phone: member.phoneNo,
-                    status: 'sent',
-                    messageSid: result.sid
+                    phone: member.phoneNo || null,
+                    email: member.email || null,
+                    status: isDelivered ? 'sent' : 'failed',
+                    whatsapp: {
+                        status: whatsappStatus,
+                        messageSid: whatsappSid
+                    },
+                    emailDelivery: {
+                        status: emailStatus,
+                        messageId: emailMessageId
+                    },
+                    error: channelErrors.length ? channelErrors.join(' | ') : null
                 });
                 
                 // Small delay to avoid rate limits (100ms)
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
             } catch (error) {
-                // Log failed delivery
+                failedCount++;
                 await dietPlan.logDelivery(
                     member,
                     'failed',
-                    error.message || 'Failed to send WhatsApp'
+                    error.message || 'Failed to send diet plan'
                 );
-                
-                failedCount++;
                 deliveryResults.push({
                     memberId: member._id,
                     name: member.name,
-                    phone: member.phoneNo,
+                    phone: member.phoneNo || null,
+                    email: member.email || null,
                     status: 'failed',
                     error: error.message
                 });
@@ -337,6 +406,18 @@ exports.broadcastDietPlan = async (req, res) => {
                 successfulDeliveries: successCount,
                 failedDeliveries: failedCount,
                 successRate: ((successCount / members.length) * 100).toFixed(2) + '%',
+                channelStats: {
+                    whatsapp: {
+                        sent: whatsappSuccess,
+                        failed: whatsappFailed,
+                        skipped: whatsappSkipped
+                    },
+                    email: {
+                        sent: emailSuccess,
+                        failed: emailFailed,
+                        skipped: emailSkipped
+                    }
+                },
                 deliveryDetails: deliveryResults,
                 stats: updatedPlan.getDeliveryStats()
             }
@@ -414,15 +495,26 @@ exports.previewDietPlanMessage = async (req, res) => {
         // Get a sample member name or use generic
         const sampleMember = await Member.findOne({ ownerId }).limit(1);
         const sampleName = sampleMember ? sampleMember.name : "Member";
+        const owner = await Owner.findById(ownerId);
+        const gymName = getGymName(owner);
+        const ownerName = getOwnerName(owner);
         
         const message = dietPlan.getWhatsAppMessage(sampleName);
+        const emailHtml = getDietPlanEmail({
+            memberName: sampleName,
+            gymName,
+            ownerName,
+            plan: dietPlan
+        });
         
         return res.status(200).json({
             success: true,
             data: {
                 message,
                 characterCount: message.length,
-                estimatedSMS: Math.ceil(message.length / 160)
+                estimatedSMS: Math.ceil(message.length / 160),
+                emailSubject: `[${gymName}] ${dietPlan.planTitle} - Diet Plan`,
+                emailHtml
             }
         });
         

@@ -1,7 +1,32 @@
 const Announcement = require("../models/announcementSchema");
 const Member = require("../../../../Basic/Features/MemberCrud/Models/Member");
 const Owner = require("../../../../Basic/Features/MemberCrud/Models/Owner");
-const sendWhatsapp = require("../../../../Utils/sendWhatsapp");
+const { sendWhatsapp } = require("../../../../Utils/sendWhatsapp");
+const { mailSender } = require("../../../../Utils/mailSender");
+const { getGymName, getOwnerName } = require("../../../../Utils/gymContext");
+const {
+  getAnnouncementEmail,
+} = require("../../../../Templates/memberCommunicationTemplates");
+
+const ALLOWED_ANNOUNCEMENT_TYPES = [
+  "General",
+  "Holiday",
+  "Event",
+  "Maintenance",
+  "Fees Reminder",
+  "New Class",
+  "Emergency",
+  "Other",
+];
+
+const normalizeAnnouncementType = (value) => {
+  if (!value) return "General";
+  const normalized = String(value).trim().toLowerCase();
+  const match = ALLOWED_ANNOUNCEMENT_TYPES.find(
+    (type) => type.toLowerCase() === normalized
+  );
+  return match || "General";
+};
 
 // Create and send announcement immediately
 exports.sendAnnouncement = async (req, res) => {
@@ -16,6 +41,7 @@ exports.sendAnnouncement = async (req, res) => {
       filterGender,
       filterPaymentStatus,
     } = req.body;
+    const normalizedAnnouncementType = normalizeAnnouncementType(announcementType);
 
     // Validate required fields
     if (!title || !message) {
@@ -39,7 +65,7 @@ exports.sendAnnouncement = async (req, res) => {
       ownerId,
       title,
       message,
-      announcementType: announcementType || "General",
+      announcementType: normalizedAnnouncementType,
       priority: priority || "Medium",
       filters: {
         gender: filterGender || "All",
@@ -69,58 +95,130 @@ exports.sendAnnouncement = async (req, res) => {
       });
     }
 
-    // Track feature usage
-    await owner.trackFeatureUsage("bulkWhatsAppMessaging");
+    // Track feature usage for bulk communication
+    await owner.trackFeatureUsage("whatsappReminders");
 
     // Send to all members
     let successCount = 0;
     let failedCount = 0;
+    let whatsappSuccess = 0;
+    let whatsappFailed = 0;
+    let whatsappSkipped = 0;
+    let emailSuccess = 0;
+    let emailFailed = 0;
+    let emailSkipped = 0;
     const deliveryResults = [];
 
-    const gymName = owner.gymName || "Your Gym";
+    const gymName = getGymName(owner);
+    const ownerName = getOwnerName(owner);
 
     for (const member of members) {
+      const channelErrors = [];
+      let whatsappStatus = "skipped";
+      let emailStatus = "skipped";
+      let whatsappSid = null;
+      let emailMessageId = null;
+
       try {
-        // Get personalized message
+        // Personalized WhatsApp message
         const whatsappMessage = announcement.getWhatsAppMessage(
           member.name,
           gymName
         );
 
-        // Send WhatsApp message
-        const result = await sendWhatsapp(member.phoneNo, whatsappMessage);
+        // Send WhatsApp if phone exists
+        if (member.phoneNo) {
+          try {
+            const result = await sendWhatsapp(member.phoneNo, whatsappMessage);
+            whatsappStatus = "sent";
+            whatsappSid = result.sid;
+            whatsappSuccess++;
+          } catch (error) {
+            whatsappStatus = "failed";
+            whatsappFailed++;
+            channelErrors.push(`WhatsApp: ${error.message}`);
+          }
+        } else {
+          whatsappSkipped++;
+        }
 
-        // Log successful delivery
-        await announcement.logDelivery(member, "sent", null, result.sid);
+        // Send email if email exists
+        if (member.email) {
+          try {
+            const emailHtml = getAnnouncementEmail({
+              memberName: member.name || "Member",
+              gymName,
+              ownerName,
+              title,
+              message,
+              priority: priority || "Medium",
+              announcementType: normalizedAnnouncementType,
+            });
+            const info = await mailSender(
+              member.email,
+              `[${gymName}] ${title}`,
+              emailHtml
+            );
+            emailStatus = "sent";
+            emailMessageId = info?.messageId || null;
+            emailSuccess++;
+          } catch (error) {
+            emailStatus = "failed";
+            emailFailed++;
+            channelErrors.push(`Email: ${error.message}`);
+          }
+        } else {
+          emailSkipped++;
+        }
 
-        successCount++;
+        const isDelivered = whatsappStatus === "sent" || emailStatus === "sent";
+        if (isDelivered) {
+          await announcement.logDelivery(member, "sent", null, whatsappSid);
+          successCount++;
+        } else {
+          await announcement.logDelivery(
+            member,
+            "failed",
+            channelErrors.join(" | ") || "No valid delivery channel"
+          );
+          failedCount++;
+        }
+
         deliveryResults.push({
           memberId: member._id,
           name: member.name,
-          phone: member.phoneNo,
-          status: "sent",
+          phone: member.phoneNo || null,
+          email: member.email || null,
+          status: isDelivered ? "sent" : "failed",
+          whatsapp: {
+            status: whatsappStatus,
+            messageSid: whatsappSid,
+          },
+          emailDelivery: {
+            status: emailStatus,
+            messageId: emailMessageId,
+          },
+          error: channelErrors.length ? channelErrors.join(" | ") : null,
         });
 
         // Small delay to avoid rate limits
         await new Promise((resolve) => setTimeout(resolve, 100));
       } catch (error) {
-        // Log failed delivery
+        failedCount++;
         await announcement.logDelivery(
           member,
           "failed",
-          error.message || "Failed to send WhatsApp"
+          error.message || "Failed to send announcement"
         );
-
-        failedCount++;
         deliveryResults.push({
           memberId: member._id,
           name: member.name,
-          phone: member.phoneNo,
+          phone: member.phoneNo || null,
+          email: member.email || null,
           status: "failed",
           error: error.message,
         });
-
-        console.error(`Failed to send to ${member.name}:`, error.message);
+        console.error(`Failed to process ${member.name}:`, error.message);
       }
     }
 
@@ -139,6 +237,18 @@ exports.sendAnnouncement = async (req, res) => {
         successfulDeliveries: successCount,
         failedDeliveries: failedCount,
         successRate: ((successCount / members.length) * 100).toFixed(2) + "%",
+        channelStats: {
+          whatsapp: {
+            sent: whatsappSuccess,
+            failed: whatsappFailed,
+            skipped: whatsappSkipped,
+          },
+          email: {
+            sent: emailSuccess,
+            failed: emailFailed,
+            skipped: emailSkipped,
+          },
+        },
         deliveryDetails: deliveryResults,
       },
     });
@@ -307,7 +417,8 @@ exports.previewAnnouncementMessage = async (req, res) => {
 
     // Get owner details
     const owner = await Owner.findById(ownerId);
-    const gymName = owner.gymName || "Your Gym";
+    const gymName = getGymName(owner);
+    const ownerName = getOwnerName(owner);
 
     // Get a sample member
     const sampleMember = await Member.findOne({ ownerId }).limit(1);
@@ -321,17 +432,28 @@ exports.previewAnnouncementMessage = async (req, res) => {
       getWhatsAppMessage: Announcement.schema.methods.getWhatsAppMessage,
     };
 
-    const previewMessage = tempAnnouncement.getWhatsAppMessage(
+    const previewWhatsAppMessage = tempAnnouncement.getWhatsAppMessage(
       sampleName,
       gymName
     );
+    const previewEmailHtml = getAnnouncementEmail({
+      memberName: sampleName,
+      gymName,
+      ownerName,
+      title,
+      message,
+      priority: priority || "Medium",
+      announcementType: "General",
+    });
 
     return res.status(200).json({
       success: true,
       data: {
-        message: previewMessage,
-        characterCount: previewMessage.length,
-        estimatedSMS: Math.ceil(previewMessage.length / 160),
+        message: previewWhatsAppMessage,
+        characterCount: previewWhatsAppMessage.length,
+        estimatedSMS: Math.ceil(previewWhatsAppMessage.length / 160),
+        emailSubject: `[${gymName}] ${title}`,
+        emailHtml: previewEmailHtml,
       },
     });
   } catch (error) {

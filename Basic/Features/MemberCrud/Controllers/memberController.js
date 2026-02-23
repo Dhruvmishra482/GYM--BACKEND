@@ -4,6 +4,11 @@ const {
   sendWhatsapp,
   testTwilioSetup,
 } = require("../../../../Utils/sendWhatsapp");
+const { mailSender } = require("../../../../Utils/mailSender");
+const { getGymName, getOwnerName } = require("../../../../Utils/gymContext");
+const {
+  getFeeReminderEmail,
+} = require("../../../../Templates/memberCommunicationTemplates");
 
 // FIXED: Add Member with proper limit checking and tracking + ENHANCED DEBUG LOGGING
 exports.addMember = async (req, res, next) => {
@@ -721,16 +726,9 @@ exports.sendMemberReminder = async (req, res) => {
 
     console.log(`Sending reminder to member ID: ${memberId}`);
 
-    // Test Twilio setup first
+    // Check WhatsApp availability, but don't block email if unavailable
     const twilioTest = await testTwilioSetup();
-    if (!twilioTest.success) {
-      console.error("Twilio setup test failed:", twilioTest.error);
-      return res.status(503).json({
-        success: false,
-        message: "WhatsApp service unavailable. Please contact administrator.",
-        error: "Service configuration error",
-      });
-    }
+    const whatsappAvailable = twilioTest.success;
 
     // SECURITY FIX: Find the member only within this owner's gym
     const member = await Member.findOne({
@@ -746,12 +744,12 @@ exports.sendMemberReminder = async (req, res) => {
       });
     }
 
-    // Check if member has phone number
-    if (!member.phoneNo) {
-      console.log(`Member ${member.name} has no phone number`);
+    // Check if member has at least one communication channel
+    if (!member.phoneNo && !member.email) {
+      console.log(`Member ${member.name} has no phone number and no email`);
       return res.status(400).json({
         success: false,
-        message: "Member phone number not found",
+        message: "Member has no phone number or email",
       });
     }
 
@@ -776,77 +774,90 @@ exports.sendMemberReminder = async (req, res) => {
       } is due today. Please make the payment. Thank you!`;
     }
 
-    console.log(`Preparing to send WhatsApp to ${member.phoneNo}`);
+    const owner = await Owner.findById(req.user.id);
+    const gymName = getGymName(owner);
+    const ownerName = getOwnerName(owner);
 
-    try {
-      // Send WhatsApp message to member
-      const result = await sendWhatsapp(member.phoneNo, message);
+    let whatsappStatus = "skipped";
+    let whatsappSid = null;
+    let emailStatus = "skipped";
+    let emailMessageId = null;
+    const channelErrors = [];
 
-      console.log(`WhatsApp sent successfully:`, result);
+    if (member.phoneNo && whatsappAvailable) {
+      try {
+        const result = await sendWhatsapp(member.phoneNo, message);
+        whatsappStatus = "sent";
+        whatsappSid = result.sid;
 
-      // TRACK WHATSAPP USAGE DIRECTLY (instead of relying on middleware)
-      const owner = await Owner.findById(req.user.id);
-      if (owner) {
-        await owner.trackFeatureUsage("whatsappReminders");
-        console.log(
-          `WhatsApp reminder usage tracked for owner: ${owner.email}`
-        );
-        console.log(
-          `Current WhatsApp usage: ${
-            owner.usageStats.featureUsage.whatsappReminders.count + 1
-          }`
-        );
-      } else {
-        console.error("Owner not found for usage tracking");
+        if (owner) {
+          await owner.trackFeatureUsage("whatsappReminders");
+        }
+      } catch (whatsappError) {
+        whatsappStatus = "failed";
+        channelErrors.push(`WhatsApp: ${whatsappError.message}`);
       }
+    } else if (member.phoneNo && !whatsappAvailable) {
+      whatsappStatus = "failed";
+      channelErrors.push("WhatsApp: service unavailable");
+    }
 
-      // Update member record with reminder sent timestamp
-      await Member.findOneAndUpdate(
-        { _id: memberId, ownerId: req.user.id },
-        { lastReminderSent: new Date() }
-      );
-
-      console.log(`Reminder sent successfully to member: ${member.name}`);
-
-      res.json({
-        success: true,
-        message: "Reminder sent successfully via WhatsApp",
-        data: {
-          memberId: member._id,
-          memberName: member.name,
-          phoneNo: member.phoneNo,
-          sentAt: new Date(),
-          whatsappSid: result.sid,
-          usageTracked: true,
-        },
-      });
-    } catch (whatsappError) {
-      console.error("WhatsApp sending failed:", whatsappError);
-
-      // Handle different types of WhatsApp errors
-      let errorMessage = "Failed to send WhatsApp reminder";
-      let statusCode = 500;
-
-      if (whatsappError.isAuthError) {
-        errorMessage =
-          "WhatsApp service authentication error. Please contact administrator.";
-        statusCode = 503;
-      } else if (whatsappError.isPhoneNumberError) {
-        errorMessage = `Invalid or unverified phone number: ${member.phoneNo}`;
-        statusCode = 400;
-      } else if (whatsappError.twilioCode) {
-        errorMessage = `WhatsApp service error: ${whatsappError.twilioMessage}`;
+    if (member.email) {
+      try {
+        const emailHtml = getFeeReminderEmail({
+          memberName: member.name || "Member",
+          gymName,
+          ownerName,
+          amount: member.feesAmount,
+          dueDate: member.nextDueDate,
+          overdueDays,
+        });
+        const info = await mailSender(
+          member.email,
+          `[${gymName}] Fee Reminder - ${member.name}`,
+          emailHtml
+        );
+        emailStatus = "sent";
+        emailMessageId = info?.messageId || null;
+      } catch (emailError) {
+        emailStatus = "failed";
+        channelErrors.push(`Email: ${emailError.message}`);
       }
+    }
 
-      return res.status(statusCode).json({
+    if (whatsappStatus !== "sent" && emailStatus !== "sent") {
+      return res.status(502).json({
         success: false,
-        message: errorMessage,
-        error:
-          process.env.NODE_ENV === "development"
-            ? whatsappError.message
-            : "WhatsApp service error",
+        message: "Failed to deliver reminder on both WhatsApp and Email",
+        error: channelErrors.join(" | "),
       });
     }
+
+    // Update member record with reminder sent timestamp
+    await Member.findOneAndUpdate(
+      { _id: memberId, ownerId: req.user.id },
+      { lastReminderSent: new Date() }
+    );
+
+    res.json({
+      success: true,
+      message: "Reminder sent successfully via WhatsApp and/or Email",
+      data: {
+        memberId: member._id,
+        memberName: member.name,
+        phoneNo: member.phoneNo || null,
+        email: member.email || null,
+        sentAt: new Date(),
+        whatsapp: {
+          status: whatsappStatus,
+          sid: whatsappSid,
+        },
+        emailDelivery: {
+          status: emailStatus,
+          messageId: emailMessageId,
+        },
+      },
+    });
   } catch (error) {
     console.error("Error in sendMemberReminder:", error);
     res.status(500).json({
@@ -931,15 +942,10 @@ exports.sendAllMemberReminders = async (req, res) => {
 
     console.log(`Starting bulk reminder sending process for owner: ${ownerId}`);
 
-    // Test Twilio setup first
     const twilioTest = await testTwilioSetup();
-    if (!twilioTest.success) {
-      console.error("Twilio setup test failed:", twilioTest.error);
-      return res.status(503).json({
-        success: false,
-        message: "WhatsApp service unavailable. Please contact administrator.",
-        error: "Service configuration error",
-      });
+    const whatsappAvailable = twilioTest.success;
+    if (!whatsappAvailable) {
+      console.warn("Twilio setup test failed, continuing with email flow only.");
     }
 
     // Get today's date for comparison
@@ -950,30 +956,55 @@ exports.sendAllMemberReminders = async (req, res) => {
     const dueMembers = await Member.find({
       ownerId: ownerId,
       nextDueDate: { $lte: today },
-      phoneNo: { $exists: true, $ne: "" }, // Only members with phone numbers
+      $or: [
+        { phoneNo: { $exists: true, $ne: "" } },
+        { email: { $exists: true, $ne: "" } },
+      ],
     });
 
     if (dueMembers.length === 0) {
-      console.log(`No due members found with phone numbers in your gym`);
+      console.log(`No due members found with phone number/email in your gym`);
       return res.status(200).json({
         success: true,
-        message: "No due members found with phone numbers",
+        message: "No due members found with phone number/email",
         data: {
           total: 0,
+          totalMembers: 0,
           successful: 0,
           failed: 0,
+          whatsapp: {
+            sent: 0,
+            failed: 0,
+            skipped: 0,
+          },
+          email: {
+            sent: 0,
+            failed: 0,
+            skipped: 0,
+          },
           members: [],
         },
       });
     }
 
     console.log(
-      `Found ${dueMembers.length} due members with phone numbers in your gym`
+      `Found ${dueMembers.length} due members with phone number/email in your gym`
     );
 
     const results = [];
     let successCount = 0;
     let failureCount = 0;
+    let whatsappSuccess = 0;
+    let whatsappFailed = 0;
+    let whatsappSkipped = 0;
+    let emailSuccess = 0;
+    let emailFailed = 0;
+    let emailSkipped = 0;
+    let totalWhatsAppTracked = 0;
+
+    const owner = await Owner.findById(ownerId);
+    const gymName = getGymName(owner);
+    const ownerName = getOwnerName(owner);
 
     // Send reminders to all due members
     for (const member of dueMembers) {
@@ -1000,35 +1031,100 @@ exports.sendAllMemberReminders = async (req, res) => {
           } is due today. Please make the payment. Thank you!`;
         }
 
-        console.log(`Sending reminder to: ${member.name} (${member.phoneNo})`);
+        console.log(`Sending reminder to: ${member.name}`);
 
-        // Send WhatsApp message
-        const result = await sendWhatsapp(member.phoneNo, message);
+        let whatsappStatus = "skipped";
+        let whatsappSid = null;
+        let emailStatus = "skipped";
+        let emailMessageId = null;
+        const channelErrors = [];
 
-        console.log(`Reminder sent to: ${member.name}`);
+        if (member.phoneNo && whatsappAvailable) {
+          try {
+            const result = await sendWhatsapp(member.phoneNo, message);
+            whatsappStatus = "success";
+            whatsappSid = result.sid;
+            whatsappSuccess++;
+            totalWhatsAppTracked++;
+          } catch (whatsappError) {
+            whatsappStatus = "failed";
+            whatsappFailed++;
+            channelErrors.push(`WhatsApp: ${whatsappError.message}`);
+          }
+        } else if (member.phoneNo && !whatsappAvailable) {
+          whatsappStatus = "failed";
+          whatsappFailed++;
+          channelErrors.push("WhatsApp: service unavailable");
+        } else {
+          whatsappSkipped++;
+        }
+
+        if (member.email) {
+          try {
+            const emailHtml = getFeeReminderEmail({
+              memberName: member.name || "Member",
+              gymName,
+              ownerName,
+              amount: member.feesAmount,
+              dueDate: member.nextDueDate,
+              overdueDays,
+            });
+            const info = await mailSender(
+              member.email,
+              `[${gymName}] Fee Reminder - ${member.name}`,
+              emailHtml
+            );
+            emailStatus = "success";
+            emailMessageId = info?.messageId || null;
+            emailSuccess++;
+          } catch (emailError) {
+            emailStatus = "failed";
+            emailFailed++;
+            channelErrors.push(`Email: ${emailError.message}`);
+          }
+        } else {
+          emailSkipped++;
+        }
 
         // Update member with last reminder sent timestamp
         await Member.findByIdAndUpdate(member._id, {
           lastReminderSent: new Date(),
         });
 
+        const isDelivered =
+          whatsappStatus === "success" || emailStatus === "success";
+
         results.push({
           memberId: member._id,
           memberName: member.name,
-          phoneNo: member.phoneNo,
-          status: "success",
-          whatsappSid: result.sid,
+          phoneNo: member.phoneNo || null,
+          email: member.email || null,
+          status: isDelivered ? "success" : "failed",
+          whatsapp: {
+            status: whatsappStatus,
+            sid: whatsappSid,
+          },
+          emailDelivery: {
+            status: emailStatus,
+            messageId: emailMessageId,
+          },
+          error: channelErrors.length ? channelErrors.join(" | ") : null,
           sentAt: new Date(),
         });
 
-        successCount++;
+        if (isDelivered) {
+          successCount++;
+        } else {
+          failureCount++;
+        }
       } catch (error) {
         console.error(`Failed to send reminder to ${member.name}:`, error);
 
         results.push({
           memberId: member._id,
           memberName: member.name,
-          phoneNo: member.phoneNo,
+          phoneNo: member.phoneNo || null,
+          email: member.email || null,
           status: "failed",
           error: error.message,
           sentAt: new Date(),
@@ -1038,31 +1134,21 @@ exports.sendAllMemberReminders = async (req, res) => {
       }
     }
 
-    // TRACK WHATSAPP USAGE DIRECTLY (track each successful reminder)
-    if (successCount > 0) {
-      const owner = await Owner.findById(ownerId);
-      if (owner) {
-        // Track each successful WhatsApp reminder separately
-        for (let i = 0; i < successCount; i++) {
+    // Track successful WhatsApp reminders only
+    if (totalWhatsAppTracked > 0 && owner) {
+      try {
+        for (let i = 0; i < totalWhatsAppTracked; i++) {
           await owner.trackFeatureUsage("whatsappReminders");
         }
-        console.log(
-          `Tracked ${successCount} WhatsApp reminders for owner: ${owner.email}`
-        );
-        console.log(
-          `Updated WhatsApp usage count: ${
-            owner.usageStats.featureUsage.whatsappReminders.count + successCount
-          }`
-        );
-      } else {
-        console.error("Owner not found for usage tracking");
+      } catch (usageError) {
+        console.error("Failed to track WhatsApp usage:", usageError);
       }
     }
 
     // Send summary to owner
     try {
       const ownerPhone = req.user.mobileNumber;
-      if (ownerPhone) {
+      if (ownerPhone && whatsappAvailable) {
         const summaryMessage = `Bulk reminders sent: ${successCount} successful, ${failureCount} failed out of ${dueMembers.length} due members.`;
 
         console.log(`Sending summary to owner: ${ownerPhone}`);
@@ -1070,10 +1156,10 @@ exports.sendAllMemberReminders = async (req, res) => {
         console.log(`Summary sent to owner`);
 
         // Track owner summary message as well
-        const owner = await Owner.findById(ownerId);
         if (owner) {
           await owner.trackFeatureUsage("whatsappReminders");
           console.log(`Tracked owner summary message`);
+          totalWhatsAppTracked += 1;
         }
       }
     } catch (summaryError) {
@@ -1090,9 +1176,20 @@ exports.sendAllMemberReminders = async (req, res) => {
       message: `Bulk reminders sent successfully`,
       data: {
         total: dueMembers.length,
+        totalMembers: dueMembers.length,
         successful: successCount,
         failed: failureCount,
-        usageTracked: successCount + (req.user.mobileNumber ? 1 : 0), // Including owner summary
+        usageTracked: totalWhatsAppTracked,
+        whatsapp: {
+          sent: whatsappSuccess,
+          failed: whatsappFailed,
+          skipped: whatsappSkipped,
+        },
+        email: {
+          sent: emailSuccess,
+          failed: emailFailed,
+          skipped: emailSkipped,
+        },
         members: results,
       },
     });

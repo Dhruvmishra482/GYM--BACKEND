@@ -27,7 +27,7 @@ const announcementSchema = new mongoose.Schema({
     // Announcement type
     announcementType: {
         type: String,
-        enum: ['General', 'Holiday', 'Event', 'Maintenance', 'Fees Reminder', 'New Class', 'Other'],
+        enum: ['General', 'Holiday', 'Event', 'Maintenance', 'Fees Reminder', 'New Class', 'Emergency', 'Other'],
         default: 'General'
     },
     
