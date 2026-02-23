@@ -1,5 +1,7 @@
 const Owner = require("../../MemberCrud/Models/Owner");
 const Member = require("../../MemberCrud/Models/Member");
+const REMINDER_TEMPLATE_SID = "HXd89670d1e1a52f161cd36c8fed252e95";
+
 const {
   sendWhatsapp,
   testTwilioSetup,
@@ -778,11 +780,24 @@ exports.sendMemberReminder = async (req, res) => {
     const gymName = getGymName(owner);
     const ownerName = getOwnerName(owner);
 
+<<<<<<< HEAD
     let whatsappStatus = "skipped";
     let whatsappSid = null;
     let emailStatus = "skipped";
     let emailMessageId = null;
     const channelErrors = [];
+=======
+    try {
+  const result = await sendWhatsapp(
+    member.phoneNo,
+    REMINDER_TEMPLATE_SID,   // ✅ TEMPLATE SID
+    {
+      "1": member.name,                 // {{1}}
+      "2": `₹${member.feesAmount}`       // {{2}}
+    }
+  );
+
+>>>>>>> 97ec0cea5d908d7a638cdcb1bd9e5d0d7be586f8
 
     if (member.phoneNo && whatsappAvailable) {
       try {

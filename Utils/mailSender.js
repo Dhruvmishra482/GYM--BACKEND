@@ -1,50 +1,33 @@
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer");
 
 const mailSender = async (to, subject, html) => {
   try {
-    // Fixed: Changed createTransporter to createTransport
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: process.env.MAIL_HOST, // smtp.gmail.com
+      port: process.env.MAIL_PORT, // 587
+      secure: false, // Gmail TLS on port 587
       auth: {
-        user: process.env.MAIL_USER, // dhruvmishra3828@gmail.com
-        pass: process.env.MAIL_PASS,
+        user: process.env.MAIL_USER, // fittacker@gmail.com
+        pass: process.env.MAIL_PASS, // App Password
       },
     });
 
-    let recipients;
-    if (Array.isArray(to)) {
-      recipients = to.join(', ');
-    } else {
-      recipients = to;
-    }
-
     const mailOptions = {
-      from: `"${process.env.MAIL_FROM_NAME || 'Iron Throne Gym'}" <${process.env.MAIL_USER}>`,
-      to: recipients,
+      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_EMAIL}>`,
+      to,
       subject,
       html,
     };
 
+    console.log("📧 Sending email...");
     const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent successfully:', info.messageId);
+    console.log("✅ Email sent:", info.messageId);
+
     return info;
-  } catch (error) {
-    console.error('Error sending email:', error.message);
-    throw error;
+  } catch (err) {
+    console.error("❌ Email sending error:", err);
+    throw new Error("Email sending failed");
   }
 };
 
-// Sirf admins ko important emails (Contact form, etc.)
-const sendAdminEmail = async (subject, html) => {
-  const adminEmails = [
-    process.env.MAIL_USER, // dhruvmishra3828@gmail.com
-    'govindsingh988877@gmail.com' 
-  ];
-  
-  return await mailSender(adminEmails, subject, html);
-};
-
-module.exports = { 
-  mailSender,  // Original function - sirf customer ko
-  sendAdminEmail  // Sirf admins ko - Contact form, important notifications
-};
+module.exports = { mailSender };

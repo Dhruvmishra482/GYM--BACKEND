@@ -3,27 +3,60 @@ const Member = require("../Basic/Features/MemberCrud/Models/Member");
 const Owner = require("../Basic/Features/MemberCrud/Models/Owner")
 const sendWhatsapp = require("../Utils/sendWhatsapp");
 const { resetCustomBillingCycles, sendExpiryReminders } = require("../Basic/Features/Subscription/Controllers/subscriptionController");
+const REMINDER_TEMPLATE_SID ="HXbbe0bd174d2ee0cf1b75a2f7097d15bd";
 
-// EXISTING: Daily due member reminder (unchanged)
+// // EXISTING: Daily due member reminder (unchanged)
+// cron.schedule("0 0 * * *", async () => {
+//     console.log("Running daily due member reminders...");
+//     const today = new Date().toISOString().split("T")[0];
+//     const dueMember = await Member.find({ nextDueDate: today });
+
+//     for (const member of dueMember) {
+//         try {
+//             await sendWhatsapp(
+//                 member.phoneNo,
+//                 `Hi ${member.name}, your gym fees is due today.`
+//             );
+//             await sendWhatsapp(
+//                 process.env.OWNER_PHONE,
+//                 `Fees due today for member ${member.name} (${member.feesAmount})`
+//             );
+//         } catch (error) {
+//             console.error(`Failed to send WhatsApp to ${member.name}:`, error);
+//         }
+//     }
+// });
+
 cron.schedule("0 0 * * *", async () => {
-    console.log("Running daily due member reminders...");
-    const today = new Date().toISOString().split("T")[0];
-    const dueMember = await Member.find({ nextDueDate: today });
+  console.log("Running daily due member reminders...");
 
-    for (const member of dueMember) {
-        try {
-            await sendWhatsapp(
-                member.phoneNo,
-                `Hi ${member.name}, your gym fees is due today.`
-            );
-            await sendWhatsapp(
-                process.env.OWNER_PHONE,
-                `Fees due today for member ${member.name} (${member.feesAmount})`
-            );
-        } catch (error) {
-            console.error(`Failed to send WhatsApp to ${member.name}:`, error);
+  const today = new Date().toISOString().split("T")[0];
+  const dueMember = await Member.find({ nextDueDate: today });
+
+  for (const member of dueMember) {
+    try {
+      // 🔔 Send reminder to member
+      await sendWhatsapp(
+        member.phoneNo,
+        REMINDER_TEMPLATE_SID,          
+        {
+          "1": member.name,            
+          "2": `₹${member.feesAmount}`  
         }
+      );
+      await sendWhatsapp(
+        process.env.OWNER_PHONE,
+        REMINDER_TEMPLATE_SID,
+        {
+          "1": member.name,
+          "2": `₹${member.feesAmount}`
+        }
+      );
+
+    } catch (error) {
+      console.error(`Failed to send WhatsApp to ${member.name}:`, error);
     }
+  }
 });
 
 // NEW: Daily billing cycle reset check (2 AM)
